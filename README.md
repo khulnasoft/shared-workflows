@@ -57,7 +57,7 @@ will ensure actions in this repo are always used at the same commit. To do this:
   with:
     repository: ${{ env.action_repo }}
     ref: ${{ env.action_ref }}
-    # substitute your-action with a unique name (within `shared-repos` for your
+    # substitute your-action with a unique name (within `shared-workflows` for your
     # action), so if multiple actions check `shared-workflows` out, they don't
     # overwrite each other
     path: _shared-workflows-your-action
