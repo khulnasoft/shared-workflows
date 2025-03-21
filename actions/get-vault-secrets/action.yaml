@@ -1,0 +1,70 @@
+name: Get Vault Secrets
+description: Composite action (step) to get secrets from Khulnasoft Labs' Vault instance.
+inputs:
+  repo_secrets:
+    description: |
+      Repository-specific secret mapping. Only Khulnasoft Labs employees can list these secrets in Vault.
+      These secrets are stored in the `ci/data/repo/khulnasoft/<repo name>/<secret path>` path in Vault.
+      Ex:
+      ```
+      repo_secrets: |
+        ENVVAR1=secretpath:key
+        ENVVAR2=secretpath:key2
+      ```
+  common_secrets:
+    description: |
+      Common secrets mapping. Only Khulnasoft Labs employees can list these secrets in Vault.
+      These secrets are stored in the `ci/data/common/<secret path>` path in Vault.
+      Ex:
+      ```
+      repo_secrets: |
+        ENVVAR1=secretpath:key
+        ENVVAR2=secretpath:key2
+      ```
+
+  vault_instance:
+    description: |
+      The Vault instance to use (`dev` or `ops`). Defaults to `ops`.
+    default: ops
+
+runs:
+  using: composite
+  steps:
+    - id: check-vault-instance
+      if: inputs.vault_instance != 'dev' && inputs.vault_instance != 'ops'
+      shell: sh
+      run: |
+        echo "Invalid value for vault_instance input: ${{ inputs.vault_instance }}. Must be 'dev' or 'ops'."
+        exit 1
+
+    # Translate the secrets into a format that the Vault action can understand
+    - id: translate-secrets
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/translate-secrets.bash"
+      env:
+        REPO_SECRETS: ${{ inputs.repo_secrets }}
+        COMMON_SECRETS: ${{ inputs.common_secrets }}
+        REPO: ${{ github.repository }}
+
+    - id: get-github-jwt-token
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      with:
+        script: |
+          const jwt = await core.getIDToken("vault-github-actions-khulnasoft-${{ inputs.vault_instance }}");
+          core.setSecret(jwt);
+          core.setOutput("github-jwt",jwt);
+
+      # Get the secrets
+    - name: Import Secrets
+      id: import-secrets
+      uses: hashicorp/vault-action@7709c609789c5e27b757a85817483caadbb5939a # v3.3.0
+      with:
+        url: "https://vault-github-actions.khulnasoft-${{ inputs.vault_instance }}.net/"
+        role: vault-github-actions
+        path: github-actions-oidc
+        method: jwt
+        jwtGithubAudience: "https://vault-github-actions.khulnasoft-${{ inputs.vault_instance }}.net"
+        extraHeaders: |
+          Proxy-Authorization-Token: Bearer ${{ steps.get-github-jwt-token.outputs.github-jwt }}
+        secrets: |
+          ${{ steps.translate-secrets.outputs.secrets }}

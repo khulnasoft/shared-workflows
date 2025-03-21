@@ -1,0 +1,103 @@
+name: "Techdocs: Rewrite relative links"
+description: Rewrite links inside techdocs pointing to outside resources
+
+inputs:
+  default-branch:
+    description: |
+      Default branch name of the repository
+    required: true
+  repo-url:
+    description: |
+      Full URL to the GitHub repository
+    required: true
+  working-directory:
+    description: |
+      Directory containing the `mkdocs.yml` file
+    required: true
+  dry-run:
+    description: |
+      Execute link rewriting without updating the underlying files
+    required: false
+    default: "false"
+  checkout-action-repository-path:
+    description: |
+      Path where the action checks out its own code. If you disable the
+      checkout, make sure to set this to where a previous checkout has been
+      made to.
+    default: _action
+    required: false
+  checkout-action-repository:
+    description: |
+      By default this action checks out its own code. If you want to skip this,
+      set to false.
+    required: false
+    default: "true"
+  debug:
+    description: |
+      Log output on debug level
+    required: false
+    default: "false"
+  verbose:
+    description: |
+      Log output on info level
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+
+  steps:
+    - id: workflow-ref
+      name: Determine workflow ref
+      if: ${{ inputs.checkout-action-repository == 'true' }}
+      shell: bash
+      run: |
+        ref=$(echo "${{ github.workflow_ref }}" | awk '{split($0,a,"@");printf "%s",a[2]}')
+        # pull request refs cannot be checked out, so we need to fall back:
+        if [[ "${ref}" =~ ^refs/pull/ ]]; then
+          printf "ref=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+        else
+          printf "ref=%s" $ref >> $GITHUB_OUTPUT
+        fi
+
+    - name: Checkout
+      if: ${{ inputs.checkout-action-repository == 'true' }}
+      env:
+        # In a composite action, these two need to be indirected via the
+        # environment, as per the GitHub actions documentation:
+        # https://docs.github.com/en/actions/learn-github-actions/contexts.
+        # These seem not to be available when using a local action, though, and
+        # so we need to fall back:
+        action_repo: ${{ github.action_repository || 'khulnasoft/shared-workflows' }}
+        action_ref: ${{ github.action_ref || 'main' }}
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        repository: ${{ env.action_repo }}
+        ref: ${{ env.action_ref }}
+        path: ${{ inputs.checkout-action-repository-path }}
+        persist-credentials: false
+
+    - name: Setup go
+      uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+      with:
+        check-latest: true
+        cache-dependency-path: |
+          ${{ inputs.checkout-action-repository-path }}/actions/techdocs-rewrite-relative-links/go.sum
+        go-version-file: "${{ inputs.checkout-action-repository-path }}/actions/techdocs-rewrite-relative-links/go.mod"
+
+    - name: Run
+      id: run
+      shell: bash
+      run: |
+        root_dir=$(realpath ${{ inputs.working-directory }})
+        cd ${{ inputs.checkout-action-repository-path }}/actions/techdocs-rewrite-relative-links
+        go run . \
+        --root-dir=${root_dir} \
+        --default-branch=${{inputs.default-branch}} \
+        --repo-url=${{inputs.repo-url}} ${{ inputs.dry-run == 'true' && '--dry-run' || '' }} ${{ inputs.debug == 'true' && '--debug' || '' }} ${{ inputs.verbose == 'true' && '--verbose' || '' }}
+
+    - name: Cleanup
+      if: ${{ always() && inputs.checkout-action-repository == 'true' }}
+      shell: bash
+      run: |
+        rm -rf ${{ inputs.checkout-action-repository-path }}
