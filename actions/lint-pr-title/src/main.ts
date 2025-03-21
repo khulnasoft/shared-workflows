@@ -146,7 +146,9 @@ export async function lint(
 
   const results = await Promise.all(
     messages.map(async ({ sha, message }) => {
-      console.log(`Linting message: ${message}`);
+      if (process.env.DEBUG === 'true') {
+        console.log(`Linting message: ${message}`);
+      }
       return { sha, ...(await commitLint(message, rules, opts)) };
     }),
   );
