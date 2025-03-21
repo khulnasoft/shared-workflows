@@ -1,0 +1,44 @@
+name: Test login-to-gar action
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "actions/login-to-gar/**"
+      - ".github/workflows/test-login-to-gar.yaml"
+
+  pull_request:
+    paths:
+      - "actions/login-to-gar/**"
+      - ".github/workflows/test-login-to-gar.yaml"
+    types:
+      - edited
+      - opened
+      - ready_for_review
+      - synchronize
+
+  merge_group:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        enviromnent:
+          - dev
+          - prod
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Test Login to GAR Action
+        id: test-login-to-gar
+        uses: ./actions/login-to-gar
+        with:
+          environment: ${{ matrix.enviromnent }}
+          registry: "us-docker.pkg.dev"
